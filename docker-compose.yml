@@ -1,44 +1,31 @@
-version: "3.7"
-
-# For local development, only database is running
-#
-# docker-compose up -d
-#
-
-# https://github.com/vercel/next.js/blob/canary/examples/with-docker-compose/docker-compose.dev.yml
+version: '3'
 
 services:
-  app:
-    container_name: app
-    build:
-      context: .
-      dockerfile: dev.Dockerfile
-    volumes:
-      - .:/app
-      - /app/node_modules
-      - /app/.next
+  payload:
+    image: node:18-alpine
     ports:
-      - "3000:3000"
-    environment:  
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}?schema=public
-    env_file:
-      - .env.local
-    restart: always
+      - '3000:3000'
+    volumes:
+      - .:/home/node/app
+      - node_modules:/home/node/app/node_modules
+    working_dir: /home/node/app/
+    command: sh -c "yarn install && yarn dev"
     depends_on:
-      - database
+      - mongo
+    env_file:
+      - .env
 
-  database:
-    container_name: database
-    restart: unless-stopped
-    image: postgres:latest
-    volumes:
-      - database_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  mongo:
+    image: mongo:latest
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - '27017:27017'
+    command:
+      - --storageEngine=wiredTiger
+    volumes:
+      - data:/data/db
+    logging:
+      driver: none
 
 volumes:
-  database_data:
+  data:
+  node_modules:

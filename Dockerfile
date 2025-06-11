@@ -1,18 +1,7 @@
-FROM node:20-alpine AS base
+# To use this Dockerfile, you have to set `output: 'standalone'` in your next.config.js file.
+# From https://github.com/vercel/next.js/blob/canary/examples/with-docker/Dockerfile
 
-ARG DATABASE_URL
-ARG NEXTAUTH_SECRET
-ARG NEXTAUTH_URL
-ARG NEXT_PUBLIC_APP_URL
-ARG RESEND_API_KEY
-ARG STRIPE_API_KEY
-ARG NEXT_PUBLIC_STRIPE_PAYMENT_LINK
-ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE
-ARG NEXT_PUBLIC_POSTHOG_API_KEY
-ARG NODE_ENV
-ARG SERVER_URL
-ARG STRIPE_SECRET_KEY_LIVE
-ARG STRIPE_WEBHOOK_SECRET
+FROM node:22.12.0-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -23,20 +12,18 @@ WORKDIR /app
 # Install dependencies based on the preferred package manager
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 RUN \
-    if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci; \
-    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && corepack use pnpm@9 && NODE_ENV=development pnpm i --frozen-lockfile; \
-    else echo "Lockfile not found." && exit 1; \
-    fi
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
 
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
-RUN npm i -g turbo
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate
 
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
@@ -44,11 +31,11 @@ RUN npx prisma generate
 # ENV NEXT_TELEMETRY_DISABLED 1
 
 RUN \
-    if [ -f yarn.lock ]; then yarn run build; \
-    elif [ -f package-lock.json ]; then npm run build; \
-    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run build; \
-    else echo "Lockfile not found." && exit 1; \
-    fi
+  if [ -f yarn.lock ]; then yarn run build; \
+  elif [ -f package-lock.json ]; then npm run build; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run build; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -61,6 +48,7 @@ ENV NODE_ENV production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Remove this line if you do not have this folder
 COPY --from=builder /app/public ./public
 
 # Set the correct permission for prerender cache
@@ -72,15 +60,12 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-
 USER nextjs
 
 EXPOSE 3000
 
 ENV PORT 3000
-# set hostname to localhost
-ENV HOSTNAME "0.0.0.0"
 
 # server.js is created by next build from the standalone output
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD ["node", "server.js"]
+CMD HOSTNAME="0.0.0.0" node server.js
